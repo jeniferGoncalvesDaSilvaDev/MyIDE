@@ -15,14 +15,14 @@ interface IDEContextType {
   currentFile: FileNode | null;
   apiKey: string;
   isLoaded: boolean;
-  createFile: (name: string) => Promise<void>;
+  createFile: (path: string) => Promise<void>;
   deleteFile: (path: string) => Promise<void>;
   updateFileContent: (path: string, content: string) => Promise<void>;
   openFile: (path: string) => Promise<void>;
   setApiKey: (key: string) => Promise<void>;
 }
 
-const STORAGE_KEY = "@ide_files_v1";
+const STORAGE_KEY = "@ide_files_v2";
 const API_KEY_STORAGE = "@ide_anthropic_key";
 const CURRENT_FILE_STORAGE = "@ide_current_file";
 
@@ -35,17 +35,18 @@ A powerful AI-assisted mobile code editor — similar to Cursor AI.
 ## Features
 
 ### Files Tab
-- **Create** files with the \`+\` button — supports .ts, .js, .py, .md, .css, .json, .yaml, .html
-- **Import** any text file from your device with the upload (↑) button
+- **Create** files with the \`+\` button — supports .ts, .js, .py, .java, .md, .css, .json, .yaml, .html
+- **Folder structure** — type \`src/main.ts\` to place files inside folders
+- **Import** any text file from your device with the upload button
 - **Delete** files by tapping the trash icon
 - Tap a file to open it in the Editor
 
 ### Editor Tab
-- **Syntax highlighting** for TypeScript, JavaScript, Python, CSS, HTML, Markdown, JSON, YAML
+- **Syntax highlighting** for TypeScript, JavaScript, Python, Java, CSS, HTML, and more
 - **Line numbers** for easy navigation
-- **Run button** — executes JavaScript and TypeScript files directly on device
-- **Console panel** — see \`console.log\` output, errors, and warnings
-- **Edit mode** — tap Edit to enter fullscreen editing
+- **Run button** — executes code on the server (JS, TS, Python, Bash, C, C++)
+- **Preview button** — renders HTML and CSS files visually
+- **Console panel** — see output, errors, and warnings
 
 ### Chat Tab
 - **AI code assistant** powered by Claude (Anthropic)
@@ -61,40 +62,44 @@ A powerful AI-assisted mobile code editor — similar to Cursor AI.
 
 ## Running Code
 
-The Run button supports **JavaScript** and **TypeScript**.
+Tap the green **Run** button in the Editor for:
 
 \`\`\`typescript
-const message: string = "Hello, World!";
-console.log(message);
-
-function add(a: number, b: number): number {
-  return a + b;
-}
-
-console.log(add(5, 3)); // 8
+// TypeScript — types are fully supported
+const greet = (name: string): string => \`Hello, \${name}!\`;
+console.log(greet("World"));
 \`\`\`
 
-> Other languages (Python, CSS, etc.) cannot be executed on-device.
+\`\`\`python
+# Python 3
+for i in range(5):
+    print(f"item {i}")
+\`\`\`
+
+\`\`\`java
+// Java
+public class Main {
+    public static void main(String[] args) {
+        System.out.println("Hello from Java!");
+    }
+}
+\`\`\`
+
+---
+
+## HTML Preview
+
+Open an \`.html\` or \`.css\` file and tap **Preview** to render it live.
 
 ---
 
 ## AI Chat Tips
 
-- Ask **"Explain this code"** for a walkthrough
-- Ask **"Find bugs in this file"** for a code review
-- Ask **"Refactor this function"** to improve code quality
-- Ask **"Write unit tests"** to generate tests
-- Ask **"Add TypeScript types"** to improve type safety
-
----
-
-## Keyboard Shortcuts (Web)
-
-| Action | Shortcut |
-|--------|----------|
-| Save file | Tap Save button |
-| Run code | Tap Run button |
-| Clear console | Tap trash icon |
+- **"Explain this code"** — get a walkthrough
+- **"Find bugs"** — code review
+- **"Refactor this function"** — improve quality
+- **"Write unit tests"** — generate test cases
+- **"Add TypeScript types"** — improve type safety
 
 ---
 
@@ -110,166 +115,35 @@ const SAMPLE_FILES: Record<string, FileNode> = {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
-  "main.ts": {
+  "src/main.ts": {
     name: "main.ts",
-    path: "main.ts",
+    path: "src/main.ts",
     language: "typescript",
-    content: `// main.ts — try tapping the Run button!
-
-function greet(name: string): string {
-  return \`Hello, \${name}!\`;
-}
-
-function fibonacci(n: number): number {
-  if (n <= 1) return n;
-  return fibonacci(n - 1) + fibonacci(n - 2);
-}
-
-// Greeting
-console.log(greet("World"));
-
-// Fibonacci sequence
-console.log("Fibonacci(10):", fibonacci(10));
-
-// Array operations
-const numbers: number[] = [1, 2, 3, 4, 5];
-const doubled = numbers.map((n) => n * 2);
-console.log("Doubled:", doubled);
-
-// Object
-const user = { name: "Alice", age: 30, role: "Developer" };
-console.log("User:", user);
-`,
+    content: `// src/main.ts — tap Run to execute!\n\nfunction greet(name: string): string {\n  return \`Hello, \${name}!\`;\n}\n\nfunction fibonacci(n: number): number {\n  if (n <= 1) return n;\n  return fibonacci(n - 1) + fibonacci(n - 2);\n}\n\nconsole.log(greet("World"));\nconsole.log("Fibonacci(10):", fibonacci(10));\n\nconst nums: number[] = [1, 2, 3, 4, 5];\nconsole.log("Doubled:", nums.map((n) => n * 2));\nconsole.log("User:", { name: "Alice", age: 30, role: "Developer" });\n`,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
-  "utils.ts": {
+  "src/utils.ts": {
     name: "utils.ts",
-    path: "utils.ts",
+    path: "src/utils.ts",
     language: "typescript",
-    content: `// utils.ts — utility functions
-
-/**
- * Capitalizes the first letter of each word
- */
-export function titleCase(str: string): string {
-  return str
-    .split(" ")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-    .join(" ");
-}
-
-/**
- * Clamps a number between min and max
- */
-export function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
-
-/**
- * Formats bytes to a human-readable string
- */
-export function formatBytes(bytes: number): string {
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let size = bytes;
-  let unitIndex = 0;
-  while (size >= 1024 && unitIndex < units.length - 1) {
-    size /= 1024;
-    unitIndex++;
-  }
-  return \`\${size.toFixed(1)} \${units[unitIndex]}\`;
-}
-
-/**
- * Debounce: delays execution until after wait ms have passed
- */
-export function debounce<T extends (...args: unknown[]) => void>(
-  fn: T,
-  wait: number
-): (...args: Parameters<T>) => void {
-  let timer: ReturnType<typeof setTimeout>;
-  return (...args: Parameters<T>) => {
-    clearTimeout(timer);
-    timer = setTimeout(() => fn(...args), wait);
-  };
-}
-`,
+    content: `// src/utils.ts\n\nexport function titleCase(str: string): string {\n  return str\n    .split(" ")\n    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())\n    .join(" ");\n}\n\nexport function clamp(value: number, min: number, max: number): number {\n  return Math.max(min, Math.min(max, value));\n}\n\nexport function formatBytes(bytes: number): string {\n  const units = ["B", "KB", "MB", "GB"];\n  let size = bytes;\n  let i = 0;\n  while (size >= 1024 && i < units.length - 1) { size /= 1024; i++; }\n  return \`\${size.toFixed(1)} \${units[i]}\`;\n}\n`,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
-  "styles.css": {
-    name: "styles.css",
-    path: "styles.css",
+  "styles/main.css": {
+    name: "main.css",
+    path: "styles/main.css",
     language: "css",
-    content: `/* styles.css — application styles */
-
-:root {
-  --color-primary: #2f81f7;
-  --color-background: #0d1117;
-  --color-surface: #161b22;
-  --color-text: #e6edf3;
-  --color-muted: #7d8590;
-  --color-border: #30363d;
-  --color-success: #7ee787;
-  --color-warning: #f2cc60;
-  --color-error: #f85149;
-  --radius: 6px;
-  --font-mono: "JetBrains Mono", Menlo, "Courier New", monospace;
-}
-
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
-
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background-color: var(--color-background);
-  color: var(--color-text);
-  line-height: 1.6;
-}
-
-.container {
-  max-width: 960px;
-  margin: 0 auto;
-  padding: 24px 16px;
-}
-
-.card {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  padding: 20px;
-}
-
-.button {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  background: var(--color-primary);
-  color: white;
-  border: none;
-  border-radius: var(--radius);
-  padding: 8px 16px;
-  font-size: 14px;
-  cursor: pointer;
-  transition: opacity 0.15s;
-}
-
-.button:hover {
-  opacity: 0.9;
-}
-
-code {
-  font-family: var(--font-mono);
-  font-size: 0.875em;
-  background: var(--color-surface);
-  padding: 2px 6px;
-  border-radius: 4px;
-  border: 1px solid var(--color-border);
-}
-`,
+    content: `/* styles/main.css — tap Preview to render! */\n\n:root {\n  --primary: #2f81f7;\n  --bg: #0d1117;\n  --surface: #161b22;\n  --text: #e6edf3;\n  --muted: #7d8590;\n  --border: #30363d;\n  --radius: 8px;\n}\n\n* { box-sizing: border-box; margin: 0; padding: 0; }\n\nbody {\n  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;\n  background: var(--bg);\n  color: var(--text);\n  padding: 24px;\n  line-height: 1.6;\n}\n\n.card {\n  background: var(--surface);\n  border: 1px solid var(--border);\n  border-radius: var(--radius);\n  padding: 20px;\n  margin: 16px 0;\n}\n\nh1 { color: var(--primary); margin-bottom: 12px; }\n`,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  "index.html": {
+    name: "index.html",
+    path: "index.html",
+    language: "html",
+    content: `<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n  <title>My Page</title>\n  <style>\n    body {\n      font-family: system-ui, sans-serif;\n      max-width: 640px;\n      margin: 40px auto;\n      padding: 0 20px;\n      background: #0d1117;\n      color: #e6edf3;\n    }\n    h1 { color: #2f81f7; }\n    .card {\n      background: #161b22;\n      border: 1px solid #30363d;\n      border-radius: 8px;\n      padding: 20px;\n      margin-top: 20px;\n    }\n    button {\n      background: #2f81f7;\n      color: white;\n      border: none;\n      padding: 10px 20px;\n      border-radius: 6px;\n      cursor: pointer;\n      margin-top: 12px;\n    }\n  </style>\n</head>\n<body>\n  <h1>Hello from Mobile IDE!</h1>\n  <div class="card">\n    <p>Tap <strong>Preview</strong> to render this HTML file.</p>\n    <button onclick="alert('It works!')">Click me</button>\n  </div>\n  <script>\n    console.log("Page loaded!");\n  </script>\n</body>\n</html>\n`,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
@@ -279,7 +153,9 @@ const IDEContext = createContext<IDEContextType | null>(null);
 
 export function IDEProvider({ children }: { children: React.ReactNode }) {
   const [files, setFiles] = useState<Record<string, FileNode>>(SAMPLE_FILES);
-  const [currentFile, setCurrentFile] = useState<FileNode | null>(null);
+  const [currentFile, setCurrentFile] = useState<FileNode | null>(
+    SAMPLE_FILES["src/main.ts"] ?? null
+  );
   const [apiKey, setApiKeyState] = useState("");
   const [isLoaded, setIsLoaded] = useState(false);
 
@@ -302,32 +178,39 @@ export function IDEProvider({ children }: { children: React.ReactNode }) {
       setFiles(loadedFiles);
       if (storedKey) setApiKeyState(storedKey);
 
+      const allPaths = Object.keys(loadedFiles);
       const defaultPath =
         storedCurrentPath && loadedFiles[storedCurrentPath]
           ? storedCurrentPath
-          : Object.keys(loadedFiles)[0] ?? null;
+          : allPaths[0] ?? null;
 
       if (defaultPath) setCurrentFile(loadedFiles[defaultPath] ?? null);
     } catch {
       setFiles(SAMPLE_FILES);
-      setCurrentFile(SAMPLE_FILES["README.md"] ?? null);
+      setCurrentFile(SAMPLE_FILES["src/main.ts"] ?? null);
     } finally {
       setIsLoaded(true);
     }
   }
 
-  async function createFile(name: string) {
-    const trimmed = name.trim();
+  async function createFile(filePath: string) {
+    const trimmed = filePath.trim().replace(/^\/+/, "").replace(/\/+$/, "");
     if (!trimmed) return;
-    const ext = trimmed.split(".").pop()?.toLowerCase() ?? "";
+
+    // Extract just the filename from the path
+    const parts = trimmed.split("/");
+    const name = parts[parts.length - 1];
+    const ext = name.split(".").pop()?.toLowerCase() ?? "";
+
     const newFile: FileNode = {
-      name: trimmed,
+      name,
       path: trimmed,
       language: EXT_MAP[ext] ?? "text",
-      content: getTemplate(trimmed),
+      content: getTemplate(name),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
+
     const updated = { ...files, [trimmed]: newFile };
     setFiles(updated);
     setCurrentFile(newFile);
@@ -343,7 +226,8 @@ export function IDEProvider({ children }: { children: React.ReactNode }) {
       const remaining = Object.values(updated);
       const next = remaining[0] ?? null;
       setCurrentFile(next);
-      if (next) await AsyncStorage.setItem(CURRENT_FILE_STORAGE, next.path);
+      if (next)
+        await AsyncStorage.setItem(CURRENT_FILE_STORAGE, next.path);
     }
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
   }
@@ -399,18 +283,21 @@ export function useIDE() {
   return ctx;
 }
 
-const EXT_MAP: Record<string, string> = {
+export const EXT_MAP: Record<string, string> = {
   ts: "typescript",
   tsx: "typescript",
   js: "javascript",
+  mjs: "javascript",
   jsx: "javascript",
   py: "python",
   md: "markdown",
   json: "json",
   css: "css",
   html: "html",
+  htm: "html",
   sh: "bash",
   bash: "bash",
+  zsh: "bash",
   yaml: "yaml",
   yml: "yaml",
   txt: "text",
@@ -418,16 +305,44 @@ const EXT_MAP: Record<string, string> = {
   toml: "text",
   gitignore: "text",
   env: "text",
+  java: "java",
+  rb: "ruby",
+  go: "go",
+  rs: "rust",
+  cpp: "cpp",
+  cc: "cpp",
+  cxx: "cpp",
+  c: "c",
+  h: "c",
+  php: "php",
+  kt: "text",
+  swift: "text",
+  cs: "text",
+  sql: "text",
 };
 
 function getTemplate(name: string): string {
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  const base = name.replace(/\.\w+$/, "");
   if (ext === "ts" || ext === "tsx") return `// ${name}\n\nexport {};\n`;
-  if (ext === "js" || ext === "jsx") return `// ${name}\n\n`;
+  if (ext === "js" || ext === "mjs" || ext === "jsx") return `// ${name}\n\n`;
   if (ext === "py") return `# ${name}\n\n`;
-  if (ext === "md") return `# ${name.replace(/\.\w+$/, "")}\n\n`;
+  if (ext === "md") return `# ${base}\n\n`;
   if (ext === "json") return `{\n  \n}\n`;
-  if (ext === "css") return `/* ${name} */\n\n`;
-  if (ext === "html") return `<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8">\n  <title>Document</title>\n</head>\n<body>\n  \n</body>\n</html>\n`;
-  return ``;
+  if (ext === "css") return `/* ${name} */\n\nbody {\n  \n}\n`;
+  if (ext === "html")
+    return `<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n  <title>${base}</title>\n</head>\n<body>\n  \n</body>\n</html>\n`;
+  if (ext === "java")
+    return `public class ${base.charAt(0).toUpperCase() + base.slice(1)} {\n    public static void main(String[] args) {\n        System.out.println("Hello from Java!");\n    }\n}\n`;
+  if (ext === "rb") return `# ${name}\n\nputs "Hello, Ruby!"\n`;
+  if (ext === "go")
+    return `package main\n\nimport "fmt"\n\nfunc main() {\n\tfmt.Println("Hello, Go!")\n}\n`;
+  if (ext === "rs")
+    return `fn main() {\n    println!("Hello, Rust!");\n}\n`;
+  if (ext === "cpp")
+    return `#include <iostream>\n\nint main() {\n    std::cout << "Hello, C++!" << std::endl;\n    return 0;\n}\n`;
+  if (ext === "c")
+    return `#include <stdio.h>\n\nint main() {\n    printf("Hello, C!\\n");\n    return 0;\n}\n`;
+  if (ext === "sh") return `#!/bin/bash\n\necho "Hello from shell!"\n`;
+  return "";
 }

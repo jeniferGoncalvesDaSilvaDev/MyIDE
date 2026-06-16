@@ -12,9 +12,9 @@ import {
 import { useColors } from "@/hooks/useColors";
 import { FileNode } from "@/context/IDEContext";
 
-const LANG_COLORS: Record<string, string> = {
+export const LANG_COLORS: Record<string, string> = {
   typescript: "#3178c6",
-  javascript: "#f7df1e",
+  javascript: "#f0db4f",
   python: "#3776ab",
   css: "#264de4",
   html: "#e34c26",
@@ -23,9 +23,19 @@ const LANG_COLORS: Record<string, string> = {
   bash: "#4eaa25",
   yaml: "#cb171e",
   text: "#888888",
+  java: "#b07219",
+  ruby: "#cc342d",
+  go: "#00add8",
+  rust: "#dea584",
+  cpp: "#f34b7d",
+  c: "#555555",
+  php: "#777bb4",
 };
 
-const LANG_ICONS: Record<string, { lib: "feather" | "material"; name: string }> = {
+const LANG_ICONS: Record<
+  string,
+  { lib: "feather" | "material"; name: string }
+> = {
   typescript: { lib: "material", name: "language-typescript" },
   javascript: { lib: "material", name: "language-javascript" },
   python: { lib: "material", name: "language-python" },
@@ -36,6 +46,13 @@ const LANG_ICONS: Record<string, { lib: "feather" | "material"; name: string }> 
   bash: { lib: "feather", name: "terminal" },
   yaml: { lib: "feather", name: "file-text" },
   text: { lib: "feather", name: "file-text" },
+  java: { lib: "material", name: "language-java" },
+  ruby: { lib: "material", name: "language-ruby" },
+  go: { lib: "material", name: "language-go" },
+  rust: { lib: "material", name: "language-rust" },
+  cpp: { lib: "material", name: "language-cpp" },
+  c: { lib: "material", name: "language-c" },
+  php: { lib: "material", name: "language-php" },
 };
 
 function LangIcon({
@@ -63,11 +80,18 @@ function LangIcon({
 interface Props {
   file: FileNode;
   isActive: boolean;
+  depth?: number;
   onPress: () => void;
   onDelete: () => void;
 }
 
-export default function FileItem({ file, isActive, onPress, onDelete }: Props) {
+export default function FileItem({
+  file,
+  isActive,
+  depth = 0,
+  onPress,
+  onDelete,
+}: Props) {
   const colors = useColors();
   const langColor = LANG_COLORS[file.language] ?? "#888888";
   const scaleAnim = useRef(new Animated.Value(1)).current;
@@ -78,23 +102,40 @@ export default function FileItem({ file, isActive, onPress, onDelete }: Props) {
     }
     Animated.sequence([
       Animated.timing(scaleAnim, {
-        toValue: 0.97,
-        duration: 80,
+        toValue: 0.98,
+        duration: 70,
         useNativeDriver: true,
       }),
       Animated.timing(scaleAnim, {
         toValue: 1,
-        duration: 80,
+        duration: 70,
         useNativeDriver: true,
       }),
     ]).start();
     onPress();
   }
 
-  const ext = file.name.split(".").pop()?.toUpperCase() ?? "TXT";
+  // Show only the filename (not full path) when in a folder
+  const displayName = file.name.includes("/")
+    ? file.name.split("/").pop() ?? file.name
+    : file.name;
+  const ext = displayName.split(".").pop()?.toUpperCase() ?? "TXT";
 
   return (
-    <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
+    <Animated.View
+      style={[
+        styles.row,
+        { transform: [{ scale: scaleAnim }] },
+        { paddingLeft: 8 + depth * 20 },
+      ]}
+    >
+      {/* Indent guide line */}
+      {depth > 0 && (
+        <View
+          style={[styles.indentLine, { backgroundColor: colors.border }]}
+        />
+      )}
+
       <TouchableOpacity
         onPress={handlePress}
         activeOpacity={0.7}
@@ -107,12 +148,9 @@ export default function FileItem({ file, isActive, onPress, onDelete }: Props) {
         ]}
       >
         <View
-          style={[
-            styles.iconContainer,
-            { backgroundColor: langColor + "20" },
-          ]}
+          style={[styles.iconContainer, { backgroundColor: langColor + "20" }]}
         >
-          <LangIcon language={file.language} size={18} color={langColor} />
+          <LangIcon language={file.language} size={17} color={langColor} />
         </View>
 
         <View style={styles.textContainer}>
@@ -126,42 +164,56 @@ export default function FileItem({ file, isActive, onPress, onDelete }: Props) {
             ]}
             numberOfLines={1}
           >
-            {file.name}
+            {displayName}
           </Text>
           <Text style={[styles.ext, { color: langColor }]}>{ext}</Text>
         </View>
+      </TouchableOpacity>
 
-        <TouchableOpacity
-          onPress={onDelete}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          style={styles.deleteBtn}
-          activeOpacity={0.6}
-        >
-          <Feather name="trash-2" size={15} color={colors.mutedForeground} />
-        </TouchableOpacity>
+      {/* Delete button OUTSIDE the main touchable — fixes tap not registering */}
+      <TouchableOpacity
+        onPress={onDelete}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        style={styles.deleteBtn}
+        activeOpacity={0.5}
+      >
+        <Feather name="trash-2" size={15} color={colors.mutedForeground} />
       </TouchableOpacity>
     </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  row: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
     marginHorizontal: 8,
     marginVertical: 2,
+    position: "relative",
+  },
+  indentLine: {
+    position: "absolute",
+    left: 28,
+    top: 0,
+    bottom: 0,
+    width: 1,
+  },
+  container: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 9,
     borderRadius: 8,
     borderWidth: 1,
   },
   iconContainer: {
-    width: 34,
-    height: 34,
-    borderRadius: 8,
+    width: 32,
+    height: 32,
+    borderRadius: 7,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 12,
+    marginRight: 10,
   },
   textContainer: {
     flex: 1,
@@ -172,13 +224,14 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2,
   },
   ext: {
-    fontSize: 11,
-    fontWeight: "600",
+    fontSize: 10,
+    fontWeight: "700",
     letterSpacing: 0.5,
-    opacity: 0.8,
+    opacity: 0.85,
   },
   deleteBtn: {
-    padding: 4,
-    marginLeft: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginLeft: 2,
   },
 });
