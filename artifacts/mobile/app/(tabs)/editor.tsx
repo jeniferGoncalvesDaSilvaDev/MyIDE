@@ -1,5 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import { fetch } from "expo/fetch";
 import React, { useRef, useState } from "react";
 import {
   KeyboardAvoidingView,
@@ -29,6 +30,13 @@ const LANG_LABELS: Record<string, string> = {
   bash: "Shell",
   yaml: "YAML",
   text: "Plain Text",
+  ruby: "Ruby",
+  php: "PHP",
+  go: "Go",
+  rust: "Rust",
+  cpp: "C++",
+  c: "C",
+  java: "Java",
 };
 
 const LANG_COLORS: Record<string, string> = {
@@ -42,85 +50,84 @@ const LANG_COLORS: Record<string, string> = {
   bash: "#4eaa25",
   yaml: "#cb171e",
   text: "#888888",
+  ruby: "#cc342d",
+  php: "#777bb4",
+  go: "#00add8",
+  rust: "#dea584",
+  cpp: "#f34b7d",
+  c: "#555555",
+  java: "#b07219",
 };
 
-const RUNNABLE = new Set(["typescript", "javascript"]);
+// Languages that cannot be executed (markup/config)
+const NOT_EXECUTABLE = new Set(["css", "html", "markdown", "json", "yaml", "text"]);
 
-function formatArg(arg: unknown): string {
-  if (typeof arg === "object" && arg !== null) {
-    try {
-      return JSON.stringify(arg, null, 2);
-    } catch {
-      return String(arg);
-    }
-  }
-  return String(arg);
+function getBaseUrl(): string {
+  const domain = process.env.EXPO_PUBLIC_DOMAIN;
+  if (domain) return `https://${domain}`;
+  return "";
 }
 
-function stripTypeScript(code: string): string {
-  let result = code;
-  // Remove import statements
-  result = result.replace(/^import\s+.*?(?:from\s+['"][^'"]*['"])?\s*;?\s*$/gm, "");
-  // Remove export keywords (keep the declaration)
-  result = result.replace(/^export\s+default\s+/gm, "");
-  result = result.replace(/^export\s+/gm, "");
-  // Remove interface declarations
-  result = result.replace(/^(?:export\s+)?interface\s+\w[\w<>, ]*\s*\{[\s\S]*?\n\}/gm, "");
-  // Remove type alias declarations
-  result = result.replace(/^(?:export\s+)?type\s+\w+\s*=\s*[^;]+;/gm, "");
-  // Remove access modifiers
-  result = result.replace(/\b(public|private|protected|readonly)\s+/g, "");
-  // Remove return type annotations
-  result = result.replace(/\):\s*(?:Promise<[^>]*>|[A-Za-z<>\[\]|&]+)\s*(?=\{)/g, ") ");
-  // Remove type annotations on variables/params  
-  result = result.replace(/:\s*(?:string|number|boolean|any|void|never|object|unknown|null|undefined)(?:\[\])?\b/g, "");
-  // Remove generic type parameters from functions/classes
-  result = result.replace(/<[A-Z]\w*(?:,\s*[A-Z]\w*)*>/g, "");
-  // Remove async keyword from main() calls but keep async functions
-  return result;
+function makeId(): string {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 }
 
-function runJS(code: string, language: string): LogEntry[] {
+async function runCodeOnServer(
+  code: string,
+  language: string
+): Promise<LogEntry[]> {
   const entries: LogEntry[] = [];
-  const id = () => Date.now().toString() + Math.random().toString(36).slice(2, 6);
-
-  const mockConsole = {
-    log: (...args: unknown[]) =>
-      entries.push({ id: id(), type: "log", text: args.map(formatArg).join(" ") }),
-    error: (...args: unknown[]) =>
-      entries.push({ id: id(), type: "error", text: args.map(formatArg).join(" ") }),
-    warn: (...args: unknown[]) =>
-      entries.push({ id: id(), type: "warn", text: args.map(formatArg).join(" ") }),
-    info: (...args: unknown[]) =>
-      entries.push({ id: id(), type: "info", text: args.map(formatArg).join(" ") }),
-    dir: (...args: unknown[]) =>
-      entries.push({ id: id(), type: "log", text: args.map(formatArg).join(" ") }),
-    table: (data: unknown) =>
-      entries.push({ id: id(), type: "log", text: formatArg(data) }),
-  };
-
-  let codeToRun = code;
-  if (language === "typescript") {
-    codeToRun = stripTypeScript(code);
-  }
 
   entries.push({
-    id: id(),
+    id: makeId(),
     type: "system",
-    text: `Running ${language === "typescript" ? "TypeScript" : "JavaScript"}...`,
+    text: `Running ${LANG_LABELS[language] ?? language}...`,
   });
 
   try {
-    // eslint-disable-next-line no-new-func
-    const fn = new Function("console", codeToRun);
-    const result = fn(mockConsole);
-    if (result !== undefined) {
-      entries.push({ id: id(), type: "result", text: formatArg(result) });
+    const res = await fetch(`${getBaseUrl()}/api/run`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code, language }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      entries.push({ id: makeId(), type: "error", text: `Server error ${res.status}: ${text}` });
+      return entries;
     }
-    entries.push({ id: id(), type: "system", text: "✓ Execution complete" });
+
+    const data = (await res.json()) as {
+      stdout: string;
+      stderr: string;
+      exitCode: number;
+    };
+
+    if (data.stdout) {
+      for (const line of data.stdout.trimEnd().split("\n")) {
+        entries.push({ id: makeId(), type: "log", text: line });
+      }
+    }
+
+    if (data.stderr) {
+      for (const line of data.stderr.trimEnd().split("\n")) {
+        entries.push({ id: makeId(), type: "error", text: line });
+      }
+    }
+
+    if (!data.stdout && !data.stderr) {
+      entries.push({ id: makeId(), type: "system", text: "(no output)" });
+    }
+
+    entries.push({
+      id: makeId(),
+      type: data.exitCode === 0 ? "system" : "error",
+      text: data.exitCode === 0 ? `✓ Exited with code 0` : `✗ Exited with code ${data.exitCode}`,
+    });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    entries.push({ id: id(), type: "error", text: message });
+    const msg = err instanceof Error ? err.message : String(err);
+    entries.push({ id: makeId(), type: "error", text: `Connection error: ${msg}` });
+    entries.push({ id: makeId(), type: "system", text: "Is the API server running?" });
   }
 
   return entries;
@@ -139,7 +146,6 @@ export default function EditorScreen() {
   const inputRef = useRef<TextInput>(null);
   const isWeb = Platform.OS === "web";
   const topPad = isWeb ? 67 : insets.top;
-  const bottomPad = isWeb ? 34 : insets.bottom;
 
   function openEditor() {
     if (!currentFile) return;
@@ -170,18 +176,12 @@ export default function EditorScreen() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
 
-    if (!RUNNABLE.has(currentFile.language)) {
-      const id = Date.now().toString();
+    if (NOT_EXECUTABLE.has(currentFile.language)) {
       setConsoleEntries([
         {
-          id,
+          id: makeId(),
           type: "warn",
-          text: `${LANG_LABELS[currentFile.language] ?? currentFile.language} cannot be executed on device.`,
-        },
-        {
-          id: id + "1",
-          type: "system",
-          text: "Only JavaScript and TypeScript are supported.",
+          text: `${LANG_LABELS[currentFile.language] ?? currentFile.language} is a markup/config file — it cannot be executed.`,
         },
       ]);
       setConsoleVisible(true);
@@ -192,20 +192,14 @@ export default function EditorScreen() {
     setConsoleVisible(true);
     setConsoleEntries([]);
 
-    // Small delay to let the console panel open visually
-    await new Promise((r) => setTimeout(r, 60));
-    const entries = runJS(currentFile.content, currentFile.language);
+    const entries = await runCodeOnServer(currentFile.content, currentFile.language);
     setConsoleEntries(entries);
     setIsRunning(false);
   }
 
-  const langLabel = currentFile
-    ? LANG_LABELS[currentFile.language] ?? currentFile.language
-    : "";
-  const langColor = currentFile
-    ? LANG_COLORS[currentFile.language] ?? "#888"
-    : "#888";
-  const canRun = !!currentFile && RUNNABLE.has(currentFile.language);
+  const langLabel = currentFile ? (LANG_LABELS[currentFile.language] ?? currentFile.language) : "";
+  const langColor = currentFile ? (LANG_COLORS[currentFile.language] ?? "#888") : "#888";
+  const canRun = !!currentFile && !NOT_EXECUTABLE.has(currentFile.language);
 
   if (!currentFile) {
     return (
@@ -217,9 +211,7 @@ export default function EditorScreen() {
         ]}
       >
         <Feather name="code" size={52} color={colors.mutedForeground} />
-        <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
-          No file open
-        </Text>
+        <Text style={[styles.emptyTitle, { color: colors.foreground }]}>No file open</Text>
         <Text style={[styles.emptyHint, { color: colors.mutedForeground }]}>
           Open a file from the Files tab
         </Text>
@@ -241,16 +233,11 @@ export default function EditorScreen() {
         ]}
       >
         <View style={styles.headerLeft}>
-          <Text
-            style={[styles.filename, { color: colors.foreground }]}
-            numberOfLines={1}
-          >
+          <Text style={[styles.filename, { color: colors.foreground }]} numberOfLines={1}>
             {currentFile.name}
           </Text>
           <View style={[styles.langBadge, { backgroundColor: langColor + "20" }]}>
-            <Text style={[styles.langBadgeText, { color: langColor }]}>
-              {langLabel}
-            </Text>
+            <Text style={[styles.langBadgeText, { color: langColor }]}>{langLabel}</Text>
           </View>
         </View>
 
@@ -273,17 +260,8 @@ export default function EditorScreen() {
             ]}
             activeOpacity={0.75}
           >
-            <Feather
-              name="play"
-              size={13}
-              color={canRun ? "#fff" : colors.mutedForeground}
-            />
-            <Text
-              style={[
-                styles.actionBtnText,
-                { color: canRun ? "#fff" : colors.mutedForeground },
-              ]}
-            >
+            <Feather name="play" size={13} color={canRun ? "#fff" : colors.mutedForeground} />
+            <Text style={[styles.actionBtnText, { color: canRun ? "#fff" : colors.mutedForeground }]}>
               Run
             </Text>
           </TouchableOpacity>
@@ -298,9 +276,7 @@ export default function EditorScreen() {
             activeOpacity={0.7}
           >
             <Feather name="edit-2" size={13} color={colors.foreground} />
-            <Text style={[styles.actionBtnText, { color: colors.foreground }]}>
-              Edit
-            </Text>
+            <Text style={[styles.actionBtnText, { color: colors.foreground }]}>Edit</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -314,9 +290,7 @@ export default function EditorScreen() {
       >
         <View style={styles.statusItem}>
           <View style={[styles.statusDot, { backgroundColor: langColor }]} />
-          <Text style={[styles.statusText, { color: colors.mutedForeground }]}>
-            {langLabel}
-          </Text>
+          <Text style={[styles.statusText, { color: colors.mutedForeground }]}>{langLabel}</Text>
         </View>
         <Text style={[styles.statusText, { color: colors.mutedForeground }]}>
           {currentFile.content.split("\n").length} lines
@@ -324,7 +298,6 @@ export default function EditorScreen() {
         <Text style={[styles.statusText, { color: colors.mutedForeground }]}>
           {currentFile.content.length} chars
         </Text>
-        {/* Console toggle */}
         <TouchableOpacity
           onPress={() => setConsoleVisible((v) => !v)}
           style={[
@@ -353,10 +326,7 @@ export default function EditorScreen() {
       <View style={{ flex: 1 }}>
         <ScrollView
           style={[styles.codeArea, { backgroundColor: colors.background }]}
-          contentContainerStyle={{
-            paddingBottom: 24,
-            paddingLeft: 4,
-          }}
+          contentContainerStyle={{ paddingBottom: 24, paddingLeft: 4 }}
           showsVerticalScrollIndicator={false}
         >
           <SyntaxHighlighter
@@ -396,24 +366,15 @@ export default function EditorScreen() {
               },
             ]}
           >
-            <View
-              style={[
-                styles.editHeader,
-                { borderBottomColor: colors.border },
-              ]}
-            >
+            <View style={[styles.editHeader, { borderBottomColor: colors.border }]}>
               <TouchableOpacity onPress={cancelEdit} activeOpacity={0.7}>
-                <Text style={[styles.cancelBtn, { color: colors.mutedForeground }]}>
-                  Cancel
-                </Text>
+                <Text style={[styles.cancelBtn, { color: colors.mutedForeground }]}>Cancel</Text>
               </TouchableOpacity>
               <Text style={[styles.editTitle, { color: colors.foreground }]}>
                 {currentFile.name}
               </Text>
               <TouchableOpacity onPress={saveFile} activeOpacity={0.8}>
-                <Text style={[styles.saveBtn, { color: colors.primary }]}>
-                  Save
-                </Text>
+                <Text style={[styles.saveBtn, { color: colors.primary }]}>Save</Text>
               </TouchableOpacity>
             </View>
 
@@ -421,10 +382,7 @@ export default function EditorScreen() {
               ref={inputRef}
               style={[
                 styles.codeInput,
-                {
-                  color: colors.foreground,
-                  backgroundColor: colors.background,
-                },
+                { color: colors.foreground, backgroundColor: colors.background },
               ]}
               value={editContent}
               onChangeText={setEditContent}
@@ -444,11 +402,7 @@ export default function EditorScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  empty: {
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-  },
+  empty: { alignItems: "center", justifyContent: "center", gap: 10 },
   emptyTitle: { fontSize: 20, fontWeight: "700", marginTop: 16 },
   emptyHint: { fontSize: 14 },
   header: {
