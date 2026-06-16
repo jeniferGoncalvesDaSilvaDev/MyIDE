@@ -2,7 +2,6 @@ import { Feather } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
 import * as Haptics from "expo-haptics";
-import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
   KeyboardAvoidingView,
@@ -19,9 +18,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useIDE } from "@/context/IDEContext";
 import { useColors } from "@/hooks/useColors";
 import FileItem from "@/components/FileItem";
+import GitHubPanel from "@/components/GitHubPanel";
 import type { FileNode } from "@/context/IDEContext";
 
-// ── Tree types ─────────────────────────────────────────────────────────────
+// ── Tree types ──────────────────────────────────────────────────────────────
 
 interface TreeFolder {
   type: "folder";
@@ -50,23 +50,22 @@ function buildTree(files: Record<string, FileNode>): TreeNode[] {
     if (parts.length === 1) {
       root.push(folder);
     } else {
-      const parentPath = parts.slice(0, -1).join("/");
-      getOrCreateFolder(parentPath).children.push(folder);
+      getOrCreateFolder(parts.slice(0, -1).join("/")).children.push(folder);
     }
     return folder;
   }
 
-  const sorted = Object.values(files).sort((a, b) =>
-    a.path.localeCompare(b.path)
-  );
+  const sorted = Object.values(files).sort((a, b) => a.path.localeCompare(b.path));
 
   for (const file of sorted) {
     const parts = file.path.split("/");
     if (parts.length === 1) {
       root.push({ type: "file", file });
     } else {
-      const folderPath = parts.slice(0, -1).join("/");
-      getOrCreateFolder(folderPath).children.push({ type: "file", file });
+      getOrCreateFolder(parts.slice(0, -1).join("/")).children.push({
+        type: "file",
+        file,
+      });
     }
   }
 
@@ -101,10 +100,7 @@ function FolderRow({
     <TouchableOpacity
       onPress={onToggle}
       activeOpacity={0.7}
-      style={[
-        styles.folderRow,
-        { paddingLeft: 16 + depth * 20 },
-      ]}
+      style={[styles.folderRow, { paddingLeft: 16 + depth * 20 }]}
     >
       <Feather
         name={isOpen ? "chevron-down" : "chevron-right"}
@@ -112,12 +108,7 @@ function FolderRow({
         color={colors.mutedForeground}
         style={{ marginRight: 4 }}
       />
-      <Feather
-        name={isOpen ? "folder" : "folder"}
-        size={16}
-        color="#f2cc60"
-        style={{ marginRight: 8 }}
-      />
+      <Feather name="folder" size={16} color="#f2cc60" style={{ marginRight: 8 }} />
       <Text style={[styles.folderName, { color: colors.foreground }]}>
         {folder.name}
       </Text>
@@ -133,25 +124,16 @@ function FolderRow({
 export default function FilesScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const router = useRouter();
-  const {
-    files,
-    currentFile,
-    createFile,
-    deleteFile,
-    openFile,
-    updateFileContent,
-  } = useIDE();
+  const { files, currentFile, createFile, deleteFile, openFile, updateFileContent } = useIDE();
 
   const [showNewFile, setShowNewFile] = useState(false);
   const [newFileName, setNewFileName] = useState("");
   const [importing, setImporting] = useState(false);
   const [openFolders, setOpenFolders] = useState<Set<string>>(
-    new Set(["src", "styles"])
+    new Set(["src", "styles", "games"])
   );
-  const [confirmDeletePath, setConfirmDeletePath] = useState<string | null>(
-    null
-  );
+  const [confirmDeletePath, setConfirmDeletePath] = useState<string | null>(null);
+  const [showGitHub, setShowGitHub] = useState(false);
 
   const isWeb = Platform.OS === "web";
   const topPad = isWeb ? 67 : insets.top;
@@ -169,7 +151,8 @@ export default function FilesScreen() {
 
   async function handleOpen(path: string) {
     await openFile(path);
-    router.navigate("/(tabs)/editor");
+    // No navigation — user taps the Editor tab themselves
+    // (router.navigate caused page reloads on web)
   }
 
   function requestDelete(path: string) {
@@ -199,7 +182,7 @@ export default function FilesScreen() {
     setShowNewFile(false);
     setNewFileName("");
 
-    // auto-open the folder it was placed in
+    // Auto-open folder in tree
     const parts = name.split("/");
     if (parts.length > 1) {
       setOpenFolders((prev) => new Set([...prev, parts.slice(0, -1).join("/")]));
@@ -208,7 +191,7 @@ export default function FilesScreen() {
     if (Platform.OS !== "web") {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
-    router.navigate("/(tabs)/editor");
+    // No router.navigate — prevents web page reload
   }
 
   async function handleImport() {
@@ -222,36 +205,26 @@ export default function FilesScreen() {
       });
       if (result.canceled || !result.assets?.length) return;
 
-      let imported = 0;
       for (const asset of result.assets) {
         try {
           const content = await FileSystem.readAsStringAsync(asset.uri, {
             encoding: FileSystem.EncodingType.UTF8,
           });
-          if (!files[asset.name]) {
-            await createFile(asset.name);
-          }
+          if (!files[asset.name]) await createFile(asset.name);
           await updateFileContent(asset.name, content);
-          imported++;
         } catch {}
       }
 
-      if (imported > 0) {
-        if (Platform.OS !== "web") {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        }
-        const last = result.assets[result.assets.length - 1];
-        if (last) {
-          await openFile(last.name);
-          router.navigate("/(tabs)/editor");
-        }
+      if (Platform.OS !== "web") {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
-    } catch {} finally {
+      // No router.navigate — prevents web page reload
+    } catch {
+    } finally {
       setImporting(false);
     }
   }
 
-  // Recursive tree renderer
   function renderNodes(nodes: TreeNode[], depth: number): React.ReactElement[] {
     const items: React.ReactElement[] = [];
     for (const node of nodes) {
@@ -266,9 +239,7 @@ export default function FilesScreen() {
             onToggle={() => toggleFolder(node.path)}
           />
         );
-        if (isOpen) {
-          items.push(...renderNodes(node.children, depth + 1));
-        }
+        if (isOpen) items.push(...renderNodes(node.children, depth + 1));
       } else {
         items.push(
           <FileItem
@@ -291,42 +262,36 @@ export default function FilesScreen() {
       <View
         style={[
           styles.header,
-          {
-            paddingTop: topPad + 12,
-            backgroundColor: colors.background,
-            borderBottomColor: colors.border,
-          },
+          { paddingTop: topPad + 12, backgroundColor: colors.background, borderBottomColor: colors.border },
         ]}
       >
         <View>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>
-            Explorer
-          </Text>
+          <Text style={[styles.headerTitle, { color: colors.foreground }]}>Explorer</Text>
           <Text style={[styles.headerSub, { color: colors.mutedForeground }]}>
             {fileCount} file{fileCount !== 1 ? "s" : ""}
           </Text>
         </View>
         <View style={styles.headerButtons}>
+          {/* GitHub button */}
+          <TouchableOpacity
+            onPress={() => setShowGitHub(true)}
+            style={[styles.iconBtn, { backgroundColor: colors.secondary, borderColor: colors.border }]}
+            activeOpacity={0.75}
+          >
+            <Feather name="github" size={16} color={colors.foreground} />
+          </TouchableOpacity>
+          {/* Import button */}
           <TouchableOpacity
             onPress={handleImport}
             disabled={importing}
-            style={[
-              styles.iconBtn,
-              {
-                backgroundColor: colors.secondary,
-                borderColor: colors.border,
-                opacity: importing ? 0.5 : 1,
-              },
-            ]}
+            style={[styles.iconBtn, { backgroundColor: colors.secondary, borderColor: colors.border, opacity: importing ? 0.5 : 1 }]}
             activeOpacity={0.75}
           >
             <Feather name="upload" size={15} color={colors.foreground} />
           </TouchableOpacity>
+          {/* New file button */}
           <TouchableOpacity
-            onPress={() => {
-              setShowNewFile(true);
-              setNewFileName("");
-            }}
+            onPress={() => { setShowNewFile(true); setNewFileName(""); }}
             style={[styles.iconBtn, { backgroundColor: colors.primary }]}
             activeOpacity={0.8}
           >
@@ -338,18 +303,13 @@ export default function FilesScreen() {
       {/* File tree */}
       <ScrollView
         style={styles.list}
-        contentContainerStyle={{
-          paddingTop: 8,
-          paddingBottom: isWeb ? 34 + 84 : insets.bottom + 84,
-        }}
+        contentContainerStyle={{ paddingTop: 8, paddingBottom: isWeb ? 34 + 84 : insets.bottom + 84 }}
         showsVerticalScrollIndicator={false}
       >
         {fileCount === 0 ? (
           <View style={styles.empty}>
             <Feather name="folder" size={48} color={colors.mutedForeground} />
-            <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-              No files yet
-            </Text>
+            <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No files yet</Text>
             <Text style={[styles.emptyHint, { color: colors.mutedForeground }]}>
               Tap + to create or ↑ to import
             </Text>
@@ -359,40 +319,14 @@ export default function FilesScreen() {
         )}
       </ScrollView>
 
-      {/* ── New file modal ── */}
-      <Modal
-        visible={showNewFile}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowNewFile(false)}
-      >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-          style={styles.modalOverlay}
-        >
-          <TouchableOpacity
-            style={StyleSheet.absoluteFill}
-            activeOpacity={1}
-            onPress={() => setShowNewFile(false)}
-          />
-          <View
-            style={[
-              styles.modalBox,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}
-          >
-            <Text style={[styles.modalTitle, { color: colors.foreground }]}>
-              New File
-            </Text>
+      {/* New file modal */}
+      <Modal visible={showNewFile} transparent animationType="fade" onRequestClose={() => setShowNewFile(false)}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.modalOverlay}>
+          <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setShowNewFile(false)} />
+          <View style={[styles.modalBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>New File</Text>
             <TextInput
-              style={[
-                styles.modalInput,
-                {
-                  color: colors.foreground,
-                  backgroundColor: colors.input,
-                  borderColor: colors.border,
-                },
-              ]}
+              style={[styles.modalInput, { color: colors.foreground, backgroundColor: colors.input, borderColor: colors.border }]}
               placeholder="main.ts  or  src/main.ts"
               placeholderTextColor={colors.mutedForeground}
               value={newFileName}
@@ -404,91 +338,48 @@ export default function FilesScreen() {
               returnKeyType="done"
             />
             <Text style={[styles.modalHint, { color: colors.mutedForeground }]}>
-              Use / for folders — e.g. src/index.ts, components/Button.tsx
+              Use / for folders — e.g. src/index.ts, games/main.lua
             </Text>
             <View style={styles.modalButtons}>
-              <TouchableOpacity
-                onPress={() => setShowNewFile(false)}
-                style={[styles.modalBtn, { borderColor: colors.border }]}
-              >
-                <Text style={{ color: colors.mutedForeground, fontSize: 15 }}>
-                  Cancel
-                </Text>
+              <TouchableOpacity onPress={() => setShowNewFile(false)} style={[styles.modalBtn, { borderColor: colors.border }]}>
+                <Text style={{ color: colors.mutedForeground, fontSize: 15 }}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                onPress={handleCreate}
-                style={[
-                  styles.modalBtn,
-                  styles.modalBtnPrimary,
-                  { backgroundColor: colors.primary },
-                ]}
-              >
-                <Text style={{ color: "#fff", fontSize: 15, fontWeight: "600" }}>
-                  Create
-                </Text>
+              <TouchableOpacity onPress={handleCreate} style={[styles.modalBtn, { backgroundColor: colors.primary, borderWidth: 0 }]}>
+                <Text style={{ color: "#fff", fontSize: 15, fontWeight: "600" }}>Create</Text>
               </TouchableOpacity>
             </View>
           </View>
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* ── Delete confirmation modal ── */}
-      <Modal
-        visible={confirmDeletePath !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setConfirmDeletePath(null)}
-      >
+      {/* Delete confirmation modal */}
+      <Modal visible={confirmDeletePath !== null} transparent animationType="fade" onRequestClose={() => setConfirmDeletePath(null)}>
         <View style={styles.modalOverlay}>
-          <TouchableOpacity
-            style={StyleSheet.absoluteFill}
-            activeOpacity={1}
-            onPress={() => setConfirmDeletePath(null)}
-          />
-          <View
-            style={[
-              styles.modalBox,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}
-          >
+          <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setConfirmDeletePath(null)} />
+          <View style={[styles.modalBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={[styles.deleteIcon, { backgroundColor: "#ef444420" }]}>
               <Feather name="trash-2" size={24} color="#ef4444" />
             </View>
-            <Text style={[styles.modalTitle, { color: colors.foreground }]}>
-              Delete File
-            </Text>
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Delete File</Text>
             <Text style={[styles.deleteMsg, { color: colors.mutedForeground }]}>
               Delete{" "}
-              <Text style={{ color: colors.foreground, fontWeight: "600" }}>
-                {confirmDeletePath}
-              </Text>
-              ? This cannot be undone.
+              <Text style={{ color: colors.foreground, fontWeight: "600" }}>{confirmDeletePath}</Text>?
+              {"\n"}This cannot be undone.
             </Text>
             <View style={styles.modalButtons}>
-              <TouchableOpacity
-                onPress={() => setConfirmDeletePath(null)}
-                style={[styles.modalBtn, { borderColor: colors.border }]}
-              >
-                <Text style={{ color: colors.mutedForeground, fontSize: 15 }}>
-                  Cancel
-                </Text>
+              <TouchableOpacity onPress={() => setConfirmDeletePath(null)} style={[styles.modalBtn, { borderColor: colors.border }]}>
+                <Text style={{ color: colors.mutedForeground, fontSize: 15 }}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                onPress={confirmDelete}
-                style={[
-                  styles.modalBtn,
-                  styles.modalBtnPrimary,
-                  { backgroundColor: "#ef4444" },
-                ]}
-              >
-                <Text style={{ color: "#fff", fontSize: 15, fontWeight: "600" }}>
-                  Delete
-                </Text>
+              <TouchableOpacity onPress={confirmDelete} style={[styles.modalBtn, { backgroundColor: "#ef4444", borderWidth: 0 }]}>
+                <Text style={{ color: "#fff", fontSize: 15, fontWeight: "700" }}>Delete</Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
+
+      {/* GitHub panel */}
+      <GitHubPanel visible={showGitHub} onClose={() => setShowGitHub(false)} />
     </View>
   );
 }
@@ -522,19 +413,9 @@ const styles = StyleSheet.create({
     paddingRight: 16,
     marginHorizontal: 8,
   },
-  folderName: {
-    fontSize: 13,
-    fontWeight: "600",
-    flex: 1,
-    letterSpacing: -0.1,
-  },
+  folderName: { fontSize: 13, fontWeight: "600", flex: 1, letterSpacing: -0.1 },
   folderCount: { fontSize: 11, fontWeight: "500" },
-  empty: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingTop: 80,
-    gap: 8,
-  },
+  empty: { alignItems: "center", justifyContent: "center", paddingTop: 80, gap: 8 },
   emptyText: { fontSize: 17, fontWeight: "600", marginTop: 12 },
   emptyHint: { fontSize: 14, textAlign: "center", paddingHorizontal: 32 },
   modalOverlay: {
@@ -552,14 +433,7 @@ const styles = StyleSheet.create({
     gap: 12,
     alignItems: "center",
   },
-  deleteIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 4,
-  },
+  deleteIcon: { width: 52, height: 52, borderRadius: 26, alignItems: "center", justifyContent: "center", marginBottom: 4 },
   modalTitle: { fontSize: 18, fontWeight: "700" },
   deleteMsg: { fontSize: 14, textAlign: "center", lineHeight: 21 },
   modalInput: {
@@ -571,12 +445,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
   },
-  modalHint: {
-    fontSize: 12,
-    textAlign: "center",
-    lineHeight: 17,
-    marginTop: -4,
-  },
+  modalHint: { fontSize: 12, textAlign: "center", lineHeight: 17, marginTop: -4 },
   modalButtons: { flexDirection: "row", gap: 10, marginTop: 4, width: "100%" },
   modalBtn: {
     flex: 1,
@@ -586,5 +455,4 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 1,
   },
-  modalBtnPrimary: { borderWidth: 0 },
 });
