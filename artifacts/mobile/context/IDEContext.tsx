@@ -26,28 +26,119 @@ const STORAGE_KEY = "@ide_files_v1";
 const API_KEY_STORAGE = "@ide_anthropic_key";
 const CURRENT_FILE_STORAGE = "@ide_current_file";
 
+const README_CONTENT = `# Mobile IDE
+
+A powerful AI-assisted mobile code editor — similar to Cursor AI.
+
+---
+
+## Features
+
+### Files Tab
+- **Create** files with the \`+\` button — supports .ts, .js, .py, .md, .css, .json, .yaml, .html
+- **Import** any text file from your device with the upload (↑) button
+- **Delete** files by tapping the trash icon
+- Tap a file to open it in the Editor
+
+### Editor Tab
+- **Syntax highlighting** for TypeScript, JavaScript, Python, CSS, HTML, Markdown, JSON, YAML
+- **Line numbers** for easy navigation
+- **Run button** — executes JavaScript and TypeScript files directly on device
+- **Console panel** — see \`console.log\` output, errors, and warnings
+- **Edit mode** — tap Edit to enter fullscreen editing
+
+### Chat Tab
+- **AI code assistant** powered by Claude (Anthropic)
+- Automatically uses your open file as context
+- Ask questions, request improvements, get explanations
+- Requires an Anthropic API key (set in Settings)
+
+### Settings Tab
+- Enter your **Anthropic API key** to enable AI chat
+- Get a free key at [console.anthropic.com](https://console.anthropic.com)
+
+---
+
+## Running Code
+
+The Run button supports **JavaScript** and **TypeScript**.
+
+\`\`\`typescript
+const message: string = "Hello, World!";
+console.log(message);
+
+function add(a: number, b: number): number {
+  return a + b;
+}
+
+console.log(add(5, 3)); // 8
+\`\`\`
+
+> Other languages (Python, CSS, etc.) cannot be executed on-device.
+
+---
+
+## AI Chat Tips
+
+- Ask **"Explain this code"** for a walkthrough
+- Ask **"Find bugs in this file"** for a code review
+- Ask **"Refactor this function"** to improve code quality
+- Ask **"Write unit tests"** to generate tests
+- Ask **"Add TypeScript types"** to improve type safety
+
+---
+
+## Keyboard Shortcuts (Web)
+
+| Action | Shortcut |
+|--------|----------|
+| Save file | Tap Save button |
+| Run code | Tap Run button |
+| Clear console | Tap trash icon |
+
+---
+
+*Built with Expo + React Native. AI powered by Anthropic Claude.*
+`;
+
 const SAMPLE_FILES: Record<string, FileNode> = {
+  "README.md": {
+    name: "README.md",
+    path: "README.md",
+    language: "markdown",
+    content: README_CONTENT,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
   "main.ts": {
     name: "main.ts",
     path: "main.ts",
     language: "typescript",
-    content: `// Welcome to Mobile IDE
-// An AI-powered code editor for your phone
+    content: `// main.ts — try tapping the Run button!
 
-import { greet, add, formatDate } from './utils';
-
-async function main(): Promise<void> {
-  const message = greet('World');
-  console.log(message);
-
-  const result = add(10, 20);
-  console.log(\`10 + 20 = \${result}\`);
-
-  const today = formatDate(new Date());
-  console.log(\`Today is: \${today}\`);
+function greet(name: string): string {
+  return \`Hello, \${name}!\`;
 }
 
-main().catch(console.error);
+function fibonacci(n: number): number {
+  if (n <= 1) return n;
+  return fibonacci(n - 1) + fibonacci(n - 2);
+}
+
+// Greeting
+console.log(greet("World"));
+
+// Fibonacci sequence
+console.log("Fibonacci(10):", fibonacci(10));
+
+// Array operations
+const numbers: number[] = [1, 2, 3, 4, 5];
+const doubled = numbers.map((n) => n * 2);
+console.log("Doubled:", doubled);
+
+// Object
+const user = { name: "Alice", age: 30, role: "Developer" };
+console.log("User:", user);
 `,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -56,76 +147,52 @@ main().catch(console.error);
     name: "utils.ts",
     path: "utils.ts",
     language: "typescript",
-    content: `/**
- * Utility functions for the application
- */
+    content: `// utils.ts — utility functions
 
 /**
- * Returns a greeting message
+ * Capitalizes the first letter of each word
  */
-export function greet(name: string): string {
-  return \`Hello, \${name}!\`;
+export function titleCase(str: string): string {
+  return str
+    .split(" ")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
 }
 
 /**
- * Adds two numbers together
+ * Clamps a number between min and max
  */
-export function add(a: number, b: number): number {
-  return a + b;
+export function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }
 
 /**
- * Formats a date to a readable string
+ * Formats bytes to a human-readable string
  */
-export function formatDate(date: Date): string {
-  return date.toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
+export function formatBytes(bytes: number): string {
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let size = bytes;
+  let unitIndex = 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex++;
+  }
+  return \`\${size.toFixed(1)} \${units[unitIndex]}\`;
 }
 
 /**
- * Checks if a string is empty or whitespace
+ * Debounce: delays execution until after wait ms have passed
  */
-export function isEmpty(str: string): boolean {
-  return str.trim().length === 0;
+export function debounce<T extends (...args: unknown[]) => void>(
+  fn: T,
+  wait: number
+): (...args: Parameters<T>) => void {
+  let timer: ReturnType<typeof setTimeout>;
+  return (...args: Parameters<T>) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), wait);
+  };
 }
-`,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  "README.md": {
-    name: "README.md",
-    path: "README.md",
-    language: "markdown",
-    content: `# Mobile IDE
-
-A powerful AI-assisted code editor for mobile devices.
-
-## Features
-
-- **Syntax Highlighting** — TypeScript, JavaScript, Python, and more
-- **AI Assistant** — Powered by Claude for intelligent code help
-- **File Management** — Create, edit, and organize your files
-- **Dark Theme** — Easy on the eyes for long coding sessions
-
-## Getting Started
-
-1. Browse your files in the **Files** tab
-2. Tap a file to open it in the **Editor**
-3. Use the **Chat** tab to get AI help with your code
-4. Add your Anthropic API key in **Settings**
-
-## AI Assistant
-
-The AI assistant knows about your currently open file.
-Ask questions like:
-
-- "Explain this code"
-- "How can I improve this?"
-- "Add error handling to main()"
-- "Write unit tests for these functions"
 `,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -134,42 +201,73 @@ Ask questions like:
     name: "styles.css",
     path: "styles.css",
     language: "css",
-    content: `/* App Styles */
+    content: `/* styles.css — application styles */
 
 :root {
-  --color-primary: #0969da;
-  --color-background: #ffffff;
-  --color-text: #1f2328;
-  --color-border: #d1d9e0;
+  --color-primary: #2f81f7;
+  --color-background: #0d1117;
+  --color-surface: #161b22;
+  --color-text: #e6edf3;
+  --color-muted: #7d8590;
+  --color-border: #30363d;
+  --color-success: #7ee787;
+  --color-warning: #f2cc60;
+  --color-error: #f85149;
   --radius: 6px;
+  --font-mono: "JetBrains Mono", Menlo, "Courier New", monospace;
 }
 
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  background-color: var(--color-background);
-  color: var(--color-text);
+* {
+  box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background-color: var(--color-background);
+  color: var(--color-text);
+  line-height: 1.6;
+}
+
 .container {
-  max-width: 1200px;
+  max-width: 960px;
   margin: 0 auto;
-  padding: 24px;
+  padding: 24px 16px;
+}
+
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 20px;
 }
 
 .button {
-  background-color: var(--color-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--color-primary);
   color: white;
   border: none;
   border-radius: var(--radius);
   padding: 8px 16px;
-  cursor: pointer;
   font-size: 14px;
+  cursor: pointer;
+  transition: opacity 0.15s;
 }
 
 .button:hover {
   opacity: 0.9;
+}
+
+code {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  background: var(--color-surface);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--color-border);
 }
 `,
     createdAt: new Date().toISOString(),
@@ -212,7 +310,7 @@ export function IDEProvider({ children }: { children: React.ReactNode }) {
       if (defaultPath) setCurrentFile(loadedFiles[defaultPath] ?? null);
     } catch {
       setFiles(SAMPLE_FILES);
-      setCurrentFile(SAMPLE_FILES["main.ts"] ?? null);
+      setCurrentFile(SAMPLE_FILES["README.md"] ?? null);
     } finally {
       setIsLoaded(true);
     }
@@ -222,11 +320,10 @@ export function IDEProvider({ children }: { children: React.ReactNode }) {
     const trimmed = name.trim();
     if (!trimmed) return;
     const ext = trimmed.split(".").pop()?.toLowerCase() ?? "";
-    const language = EXT_MAP[ext] ?? "text";
     const newFile: FileNode = {
       name: trimmed,
       path: trimmed,
-      language,
+      language: EXT_MAP[ext] ?? "text",
       content: getTemplate(trimmed),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -313,24 +410,24 @@ const EXT_MAP: Record<string, string> = {
   css: "css",
   html: "html",
   sh: "bash",
+  bash: "bash",
   yaml: "yaml",
   yml: "yaml",
   txt: "text",
+  xml: "text",
+  toml: "text",
+  gitignore: "text",
+  env: "text",
 };
 
 function getTemplate(name: string): string {
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
-  if (ext === "ts" || ext === "tsx")
-    return `// ${name}\n\nexport {};\n`;
-  if (ext === "js" || ext === "jsx")
-    return `// ${name}\n\n`;
-  if (ext === "py")
-    return `# ${name}\n\n`;
-  if (ext === "md")
-    return `# ${name.replace(/\.md$/, "")}\n\n`;
-  if (ext === "json")
-    return `{\n  \n}\n`;
-  if (ext === "css")
-    return `/* ${name} */\n\n`;
+  if (ext === "ts" || ext === "tsx") return `// ${name}\n\nexport {};\n`;
+  if (ext === "js" || ext === "jsx") return `// ${name}\n\n`;
+  if (ext === "py") return `# ${name}\n\n`;
+  if (ext === "md") return `# ${name.replace(/\.\w+$/, "")}\n\n`;
+  if (ext === "json") return `{\n  \n}\n`;
+  if (ext === "css") return `/* ${name} */\n\n`;
+  if (ext === "html") return `<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8">\n  <title>Document</title>\n</head>\n<body>\n  \n</body>\n</html>\n`;
   return ``;
 }
