@@ -20,6 +20,10 @@ function NativeTabLayout() {
         <Icon sf={{ default: "curlybraces", selected: "curlybraces" }} />
         <Label>Editor</Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="terminal">
+        <Icon sf={{ default: "terminal", selected: "terminal.fill" }} />
+        <Label>Terminal</Label>
+      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="chat">
         <Icon sf={{ default: "message", selected: "message.fill" }} />
         <Label>Chat</Label>
@@ -93,6 +97,18 @@ function ClassicTabLayout() {
               <SymbolView name="curlybraces" tintColor={color} size={22} />
             ) : (
               <Feather name="code" size={21} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="terminal"
+        options={{
+          title: "Terminal",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="terminal" tintColor={color} size={22} />
+            ) : (
+              <Feather name="terminal" size={21} color={color} />
             ),
         }}
       />
