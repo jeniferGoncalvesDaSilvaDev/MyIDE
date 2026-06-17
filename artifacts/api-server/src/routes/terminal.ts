@@ -1,10 +1,17 @@
 import { Router } from "express";
-import { exec } from "child_process";
+import { exec, execSync } from "child_process";
 import { existsSync } from "fs";
 import { resolve, join } from "path";
 
 const router = Router();
 const WORKSPACE_ROOT = "/home/runner/workspace";
+
+// Full PATH from login shell so nix packages (java, lua, etc.) are accessible
+let EXEC_PATH = process.env.PATH ?? "/usr/bin:/bin";
+try {
+  EXEC_PATH = execSync('bash -l -c "echo $PATH"', { encoding: "utf8", timeout: 5000 }).trim();
+} catch { /* keep */ }
+const EXEC_ENV = { ...process.env, PATH: EXEC_PATH };
 
 router.post("/", (req, res) => {
   const { command, cwd = WORKSPACE_ROOT } = req.body as {
@@ -56,7 +63,7 @@ router.post("/", (req, res) => {
 
   exec(
     trimmed,
-    { cwd: safeCwd, timeout: 30_000, shell: "/bin/bash" },
+    { cwd: safeCwd, timeout: 30_000, shell: "/bin/bash", env: EXEC_ENV },
     (err, stdout, stderr) => {
       const timedOut = err?.killed === true || err?.signal === "SIGTERM";
       const exitCode = timedOut ? 124 : (err?.code ?? 0);

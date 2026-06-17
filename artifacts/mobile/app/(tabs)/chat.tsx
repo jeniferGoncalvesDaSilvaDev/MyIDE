@@ -1,11 +1,11 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { fetch } from "expo/fetch";
-import { useRouter } from "expo-router";
 import React, { useCallback, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   FlatList,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -25,40 +25,39 @@ function getBaseUrl(): string {
 }
 
 const SUGGESTIONS = [
-  { icon: "search", text: "Explain this code" },
-  { icon: "zap", text: "Fix bugs" },
-  { icon: "edit-3", text: "Refactor" },
-  { icon: "check-square", text: "Write tests" },
+  { icon: "search" as const, text: "Explain this code" },
+  { icon: "zap" as const, text: "Find and fix bugs" },
+  { icon: "edit-3" as const, text: "Refactor for clarity" },
+  { icon: "check-square" as const, text: "Write unit tests" },
 ];
 
 export default function ChatScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const router = useRouter();
   const { currentFile, apiKey } = useIDE();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const inputRef = useRef<TextInput>(null);
   const listRef = useRef<FlatList>(null);
-  const abortRef = useRef<(() => void) | null>(null);
+  const abortRef = useRef<boolean>(false);
   const isWeb = Platform.OS === "web";
   const topPad = isWeb ? 67 : insets.top;
-  const bottomPad = isWeb ? 34 : insets.bottom;
+  const bottomPad = isWeb ? 76 : insets.bottom;
 
   function buildSystemPrompt(): string {
     if (!currentFile) {
-      return "You are an expert coding assistant similar to Cursor AI. Help the user with coding questions, explain concepts, suggest improvements, and write code. Be concise and use markdown code blocks.";
+      return "You are an expert coding assistant. Help the user with coding questions, explain concepts, suggest improvements, and write code. Use markdown and code blocks. Be concise and practical.";
     }
-    return `You are an expert coding assistant similar to Cursor AI. The user has this file open:
+    return `You are an expert coding assistant. The user has this file open:
 
 **${currentFile.name}** (${currentFile.language})
 
 \`\`\`${currentFile.language}
-${currentFile.content.slice(0, 4000)}${currentFile.content.length > 4000 ? "\n// ... (truncated)" : ""}
+${currentFile.content.slice(0, 6000)}${currentFile.content.length > 6000 ? "\n// ... (truncated)" : ""}
 \`\`\`
 
-Help them understand, improve, or extend this code. Be concise and practical.`;
+Help them understand, improve, or extend this code. Be concise and practical. Use markdown.`;
   }
 
   const sendMessage = useCallback(
@@ -66,14 +65,14 @@ Help them understand, improve, or extend this code. Be concise and practical.`;
       const messageText = (text ?? input).trim();
       if (!messageText || isLoading) return;
 
-      if (!apiKey) {
-        const noKeyMsg: Message = {
+      if (!apiKey.trim()) {
+        const helpMsg: Message = {
           id: Date.now().toString(),
           role: "assistant",
           content:
-            "Please add your Anthropic API key in the **Settings** tab to use the AI assistant.\n\nGet a free key at **console.anthropic.com**",
+            "## API Key Required\n\nTo use the AI assistant, add your **Anthropic API key** in the Settings tab.\n\n1. Go to **Settings** (gear icon)\n2. Paste your key in **AI Configuration**\n3. Tap **Save Key**\n\nGet a free key at [console.anthropic.com](https://console.anthropic.com)",
         };
-        setMessages((prev) => [noKeyMsg, ...prev]);
+        setMessages((prev) => [helpMsg, ...prev]);
         return;
       }
 
@@ -87,107 +86,111 @@ Help them understand, improve, or extend this code. Be concise and practical.`;
         content: messageText,
       };
 
-      const streamingId = (Date.now() + 1).toString();
-      const streamingMsg: Message = {
-        id: streamingId,
+      const loadingId = (Date.now() + 1).toString();
+      const loadingMsg: Message = {
+        id: loadingId,
         role: "assistant",
         content: "",
         isStreaming: true,
       };
 
-      setMessages((prev) => [streamingMsg, userMsg, ...prev]);
+      setMessages((prev) => [loadingMsg, userMsg, ...prev]);
       setInput("");
       setIsLoading(true);
+      abortRef.current = false;
 
+      // Build conversation history (send oldest first)
       const history = messages
         .slice()
         .reverse()
         .map((m) => ({ role: m.role, content: m.content }));
-      history.push({ role: "user", content: messageText });
-
-      let aborted = false;
-      abortRef.current = () => {
-        aborted = true;
-      };
+      history.push({ role: "user" as const, content: messageText });
 
       try {
-        const response = await fetch(`${getBaseUrl()}/api/ai/chat/stream`, {
+        const controller = new AbortController();
+
+        const response = await fetch(`${getBaseUrl()}/api/ai/chat`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "x-anthropic-key": apiKey,
+            "x-anthropic-key": apiKey.trim(),
           },
           body: JSON.stringify({
             messages: history,
             systemPrompt: buildSystemPrompt(),
           }),
+          signal: controller.signal,
         });
 
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (abortRef.current) {
+          controller.abort();
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === loadingId
+                ? { ...m, content: "_Cancelled._", isStreaming: false }
+                : m
+            )
+          );
+          return;
+        }
 
-        const reader = response.body?.getReader();
-        if (!reader) throw new Error("No response body");
+        const data = (await response.json()) as {
+          content?: string;
+          error?: string;
+        };
 
-        const decoder = new TextDecoder();
-        let accumulated = "";
-
-        while (!aborted) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          const chunk = decoder.decode(value, { stream: true });
-
-          for (const line of chunk.split("\n")) {
-            if (!line.startsWith("data: ")) continue;
-            try {
-              const parsed = JSON.parse(line.slice(6).trim());
-              if (parsed.content) {
-                accumulated += parsed.content;
-                const snap = accumulated;
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === streamingId
-                      ? { ...m, content: snap, isStreaming: true }
-                      : m
-                  )
-                );
-              }
-            } catch {}
-          }
+        if (!response.ok || data.error) {
+          throw new Error(data.error ?? `Server error ${response.status}`);
         }
 
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === streamingId ? { ...m, isStreaming: false } : m
+            m.id === loadingId
+              ? { ...m, content: data.content ?? "(no response)", isStreaming: false }
+              : m
           )
         );
       } catch (err: any) {
-        const errMsg = err?.message?.includes("401")
-          ? "Invalid API key — check your key in **Settings**."
-          : "Connection error. Make sure the server is running.";
+        if (abortRef.current) return;
+        const errText =
+          err?.name === "AbortError"
+            ? "_Cancelled._"
+            : err?.message?.includes("401") || err?.message?.includes("Invalid API")
+            ? "❌ **Invalid API key** — please check your key in Settings."
+            : err?.message?.includes("429")
+            ? "⏳ **Rate limited** — wait a moment and try again."
+            : err?.message?.includes("fetch") || err?.message?.includes("network") || err?.message?.includes("Failed")
+            ? "🔌 **Connection error** — make sure the server is running."
+            : `❌ Error: ${err?.message ?? "Unknown error"}`;
+
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === streamingId
-              ? { ...m, content: errMsg, isStreaming: false }
+            m.id === loadingId
+              ? { ...m, content: errText, isStreaming: false }
               : m
           )
         );
       } finally {
         setIsLoading(false);
-        abortRef.current = null;
+        abortRef.current = false;
       }
     },
     [input, isLoading, messages, apiKey, currentFile]
   );
 
-  function clearChat() {
-    abortRef.current?.();
-    setMessages([]);
+  function stopLoading() {
+    abortRef.current = true;
     setIsLoading(false);
+  }
+
+  function clearChat() {
+    stopLoading();
+    setMessages([]);
   }
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* ── Header ── */}
+      {/* Header */}
       <View
         style={[
           styles.header,
@@ -199,58 +202,98 @@ Help them understand, improve, or extend this code. Be concise and practical.`;
         ]}
       >
         <View style={styles.headerLeft}>
-          <View style={[styles.modelBadge, { backgroundColor: colors.primary + "18", borderColor: colors.primary + "35" }]}>
-            <Text style={[styles.modelBadgeText, { color: colors.primary }]}>✦ Claude</Text>
+          <View
+            style={[
+              styles.modelBadge,
+              {
+                backgroundColor: colors.primary + "18",
+                borderColor: colors.primary + "35",
+              },
+            ]}
+          >
+            <Text style={[styles.modelBadgeText, { color: colors.primary }]}>
+              ✦ Claude
+            </Text>
           </View>
           {currentFile && (
-            <TouchableOpacity
-              onPress={() => router.navigate("/(tabs)/editor")}
-              activeOpacity={0.7}
-              style={[styles.contextPill, { backgroundColor: colors.secondary, borderColor: colors.border }]}
+            <View
+              style={[
+                styles.contextPill,
+                { backgroundColor: colors.secondary, borderColor: colors.border },
+              ]}
             >
               <Feather name="file-text" size={11} color={colors.mutedForeground} />
-              <Text style={[styles.contextPillText, { color: colors.mutedForeground }]} numberOfLines={1}>
+              <Text
+                style={[styles.contextPillText, { color: colors.mutedForeground }]}
+                numberOfLines={1}
+              >
                 {currentFile.name}
               </Text>
-            </TouchableOpacity>
+            </View>
           )}
         </View>
 
         {messages.length > 0 && (
-          <TouchableOpacity onPress={clearChat} activeOpacity={0.7} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <TouchableOpacity
+            onPress={clearChat}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
             <Feather name="rotate-ccw" size={17} color={colors.mutedForeground} />
           </TouchableOpacity>
         )}
       </View>
 
-      {/* ── Messages ── */}
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding" keyboardVerticalOffset={0}>
+      {/* Messages */}
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
         <FlatList
           ref={listRef}
           data={messages}
           keyExtractor={(m) => m.id}
-          renderItem={({ item }) => <ChatMessage message={item} />}
+          renderItem={({ item }) => (
+            item.isStreaming && !item.content ? (
+              <View style={styles.thinkingRow}>
+                <View style={[styles.thinkingBubble, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <ActivityIndicator size="small" color={colors.primary} />
+                  <Text style={[styles.thinkingText, { color: colors.mutedForeground }]}>
+                    Claude is thinking…
+                  </Text>
+                </View>
+              </View>
+            ) : (
+              <ChatMessage message={item} />
+            )
+          )}
           inverted
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.messageList}
           ListFooterComponent={
             messages.length === 0 ? (
               <View style={styles.emptyState}>
-                {/* Big glow icon */}
-                <View style={[styles.emptyGlow, { backgroundColor: colors.primary + "15" }]}>
+                <View
+                  style={[
+                    styles.emptyGlow,
+                    { backgroundColor: colors.primary + "15" },
+                  ]}
+                >
                   <Text style={styles.emptyEmoji}>✦</Text>
                 </View>
                 <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
                   AI Code Assistant
                 </Text>
-                <Text style={[styles.emptySubtitle, { color: colors.mutedForeground }]}>
+                <Text
+                  style={[styles.emptySubtitle, { color: colors.mutedForeground }]}
+                >
                   {currentFile
                     ? `Ask about ${currentFile.name} or anything else`
                     : "Ask me to write, explain, or debug code"}
                 </Text>
 
-                {/* Suggestion chips */}
-                <View style={styles.suggestionGrid}>
+                <ScrollView
+                  horizontal={false}
+                  style={styles.suggestionList}
+                  showsVerticalScrollIndicator={false}
+                >
                   {SUGGESTIONS.map((s) => (
                     <TouchableOpacity
                       key={s.text}
@@ -261,13 +304,21 @@ Help them understand, improve, or extend this code. Be concise and practical.`;
                       ]}
                       activeOpacity={0.7}
                     >
-                      <Feather name={s.icon as any} size={14} color={colors.primary} />
-                      <Text style={[styles.suggestionText, { color: colors.foreground }]}>
+                      <Feather name={s.icon} size={15} color={colors.primary} />
+                      <Text
+                        style={[styles.suggestionText, { color: colors.foreground }]}
+                      >
                         {s.text}
                       </Text>
+                      <Feather
+                        name="arrow-right"
+                        size={13}
+                        color={colors.mutedForeground}
+                        style={{ marginLeft: "auto" }}
+                      />
                     </TouchableOpacity>
                   ))}
-                </View>
+                </ScrollView>
               </View>
             ) : null
           }
@@ -275,7 +326,7 @@ Help them understand, improve, or extend this code. Be concise and practical.`;
           keyboardShouldPersistTaps="handled"
         />
 
-        {/* ── Input bar ── */}
+        {/* Input bar */}
         <View
           style={[
             styles.inputBar,
@@ -289,13 +340,20 @@ Help them understand, improve, or extend this code. Be concise and practical.`;
           <View
             style={[
               styles.inputWrap,
-              { backgroundColor: colors.card, borderColor: isLoading ? colors.primary + "60" : colors.border },
+              {
+                backgroundColor: colors.card,
+                borderColor: isLoading
+                  ? colors.primary + "80"
+                  : colors.border,
+              },
             ]}
           >
             <TextInput
               ref={inputRef}
               style={[styles.textInput, { color: colors.foreground }]}
-              placeholder={isLoading ? "Claude is thinking…" : "Ask about your code…"}
+              placeholder={
+                isLoading ? "Claude is thinking…" : "Ask about your code…"
+              }
               placeholderTextColor={colors.mutedForeground}
               value={input}
               onChangeText={setInput}
@@ -303,10 +361,11 @@ Help them understand, improve, or extend this code. Be concise and practical.`;
               maxLength={2000}
               editable={!isLoading}
               returnKeyType="send"
+              blurOnSubmit
               onSubmitEditing={() => sendMessage()}
             />
             <TouchableOpacity
-              onPress={isLoading ? () => abortRef.current?.() : () => sendMessage()}
+              onPress={isLoading ? stopLoading : () => sendMessage()}
               disabled={!isLoading && !input.trim()}
               style={[
                 styles.sendBtn,
@@ -327,6 +386,9 @@ Help them understand, improve, or extend this code. Be concise and practical.`;
               />
             </TouchableOpacity>
           </View>
+          <Text style={[styles.disclaimer, { color: colors.mutedForeground }]}>
+            Powered by Claude · Set key in Settings
+          </Text>
         </View>
       </KeyboardAvoidingView>
     </View>
@@ -356,11 +418,7 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderWidth: 1,
   },
-  modelBadgeText: {
-    fontSize: 13,
-    fontWeight: "700",
-    letterSpacing: 0.2,
-  },
+  modelBadgeText: { fontSize: 13, fontWeight: "700", letterSpacing: 0.2 },
   contextPill: {
     flexDirection: "row",
     alignItems: "center",
@@ -371,50 +429,52 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     maxWidth: 150,
   },
-  contextPillText: {
-    fontSize: 12,
-    fontWeight: "500",
-    flexShrink: 1,
-  },
+  contextPillText: { fontSize: 12, fontWeight: "500", flexShrink: 1 },
   messageList: {
     paddingTop: 8,
     paddingBottom: 8,
     flexGrow: 1,
     justifyContent: "flex-end",
   },
+  thinkingRow: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    alignItems: "flex-start",
+  },
+  thinkingBubble: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  thinkingText: { fontSize: 14, fontStyle: "italic" },
   emptyState: {
     alignItems: "center",
-    paddingHorizontal: 28,
-    paddingVertical: 48,
-    gap: 14,
+    paddingHorizontal: 24,
+    paddingTop: 48,
+    paddingBottom: 24,
+    gap: 12,
   },
   emptyGlow: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 4,
   },
-  emptyEmoji: {
-    fontSize: 34,
-  },
-  emptyTitle: {
-    fontSize: 22,
-    fontWeight: "700",
-    letterSpacing: -0.5,
-  },
+  emptyEmoji: { fontSize: 32 },
+  emptyTitle: { fontSize: 22, fontWeight: "700", letterSpacing: -0.5 },
   emptySubtitle: {
     fontSize: 14,
     textAlign: "center",
     lineHeight: 21,
     maxWidth: 260,
   },
-  suggestionGrid: {
-    width: "100%",
-    marginTop: 8,
-    gap: 8,
-  },
+  suggestionList: { width: "100%", marginTop: 4 },
   suggestionChip: {
     flexDirection: "row",
     alignItems: "center",
@@ -422,16 +482,15 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 13,
+    marginBottom: 8,
   },
-  suggestionText: {
-    fontSize: 14,
-    fontWeight: "500",
-  },
+  suggestionText: { fontSize: 14, fontWeight: "500", flex: 1 },
   inputBar: {
     borderTopWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 12,
     paddingTop: 10,
+    gap: 6,
   },
   inputWrap: {
     flexDirection: "row",
@@ -458,4 +517,5 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 2,
   },
+  disclaimer: { fontSize: 11, textAlign: "center" },
 });
